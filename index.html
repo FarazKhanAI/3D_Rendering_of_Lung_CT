@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COVID-CT-MD 3D Chest CT Scan Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, .font-display { font-family: 'Outfit', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.3); }
+        ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+        .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+<base target="_blank">
+</head>
+<body class="h-full flex flex-col overflow-hidden bg-slate-950 text-slate-100">
+
+    <!-- Setup Screen -->
+    <div id="setupScreen" class="min-h-screen w-full flex flex-col justify-center items-center p-6 bg-slate-950 relative overflow-y-auto z-50">
+        <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+        <div class="w-full max-w-2xl bg-slate-900/80 border border-slate-800 rounded-2xl shadow-2xl p-8 backdrop-blur-md flex flex-col space-y-6 z-10">
+            <div class="flex items-center space-x-4">
+                <div class="bg-blue-600/20 text-blue-400 p-3.5 rounded-xl border border-blue-500/30">
+                    <i data-lucide="activity" class="w-8 h-8 animate-pulse"></i>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold tracking-tight text-white">CT Scan Volumetric Visualizer</h2>
+                    <p class="text-sm text-slate-400">Reconstruct and explore chest CT scans in real-time 3D</p>
+                </div>
+            </div>
+
+            <hr class="border-slate-800/80">
+
+            <div id="inputForm" class="space-y-4">
+                <div class="space-y-2">
+                    <label for="dirInput" class="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        DICOM Dataset Directory Path
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="text" id="dirInput" value="f:\\3D\\P001" placeholder="e.g. C:\\Scans\\Patient_A" 
+                               class="flex-1 bg-slate-950/80 border border-slate-800 text-slate-200 text-sm px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all font-mono">
+                        <button id="useDefaultBtn" class="px-3.5 py-3 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700/85 transition-all font-medium whitespace-nowrap">
+                            Default P001
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-500">
+                        Enter the absolute folder path on your machine where the DICOM slices (.dcm) are stored.
+                    </p>
+                </div>
+
+                <button id="startProcessBtn" class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-lg hover:shadow-blue-500/10 active:scale-[0.99]">
+                    <i data-lucide="play" class="w-4 h-4"></i> Reconstruct 3D Volume
+                </button>
+            </div>
+
+            <div id="setupErrorBox" class="hidden bg-rose-950/30 border border-rose-800/50 rounded-xl p-4 flex gap-3 text-rose-200 text-xs">
+                <i data-lucide="alert-circle" class="w-5 h-5 text-rose-400 shrink-0"></i>
+                <div class="space-y-1">
+                    <p class="font-semibold text-rose-300">Processing Failed</p>
+                    <p id="setupErrorText" class="text-rose-400/90 font-mono"></p>
+                </div>
+            </div>
+
+            <div id="progressPanel" class="hidden space-y-4">
+                <div class="flex items-center justify-between text-xs">
+                    <span id="setupProgressStep" class="text-slate-400 font-medium">Reconstructing scan...</span>
+                    <span id="setupProgressPercent" class="font-mono text-white font-bold">0%</span>
+                </div>
+                <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800/50">
+                    <div id="setupProgressBar" class="bg-gradient-to-r from-blue-500 to-indigo-500 h-full w-0 transition-all duration-300 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+                        Reconstruction Console Logs
+                    </label>
+                    <div id="logConsole" class="w-full h-56 bg-slate-950/90 rounded-xl border border-slate-850 p-4 font-mono text-[11px] leading-relaxed text-slate-300 overflow-y-auto whitespace-pre-wrap select-text scroll-smooth"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Wrapper -->
+    <div id="visualizerApp" class="h-full flex flex-col overflow-hidden hidden">
+        <header class="bg-slate-900 border-b border-slate-800/80 px-6 py-4 flex items-center justify-between shadow-lg z-10">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600/20 text-blue-400 p-2 rounded-lg border border-blue-500/30">
+                    <i data-lucide="activity" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        COVID-CT-MD 3D Visualizer
+                    </h1>
+                    <p class="text-xs text-slate-400">Advanced Chest CT Scan Volumetric Explorer</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2 bg-slate-950/80 px-3 py-1.5 rounded-full border border-slate-800">
+                    <span class="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse"></span>
+                    <span id="patientName" class="text-xs font-semibold text-rose-400">Subject P001</span>
+                    <span class="text-xs text-slate-500">|</span>
+                    <span id="scanStatus" class="text-xs text-slate-400">COVID-19 Positive</span>
+                </div>
+                <button id="loadAnotherBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-lg border border-slate-700 text-xs font-semibold transition-all">
+                    <i data-lucide="folder-open" class="w-3.5 h-3.5"></i> Load New Scan
+                </button>
+            </div>
+        </header>
+
+        <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+            <div class="flex-1 relative bg-slate-950 flex flex-col">
+                <div id="canvas-container" class="flex-1 w-full h-full cursor-grab active:cursor-grabbing"></div>
+                <div class="absolute bottom-6 left-6 p-4 rounded-xl bg-slate-900/90 border border-slate-800/80 backdrop-blur-md flex flex-wrap gap-4 items-center max-w-lg shadow-2xl">
+                    <label class="flex items-center space-x-3 cursor-pointer group">
+                        <div class="relative">
+                            <input type="checkbox" id="lockRotation" checked class="sr-only peer">
+                            <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/40 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </div>
+                        <span class="text-xs font-medium text-slate-300 group-hover:text-white transition-colors flex items-center gap-1.5">
+                            <i data-lucide="lock" class="w-3.5 h-3.5"></i> Lock Horizontal Rotation
+                        </span>
+                    </label>
+                    <button id="resetCameraBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-semibold transition-all">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Reset View
+                    </button>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="showWireframe" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500/30">
+                        <span class="text-xs text-slate-300">Show Bounds</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="w-full md:w-[420px] bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800/80 flex flex-col overflow-y-auto">
+                <div class="p-6 space-y-6">
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                            <i data-lucide="eye" class="w-4 h-4 text-blue-400"></i> Rendering Mode
+                        </h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button id="modeVolume" class="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 border border-blue-500 text-white transition-all shadow-md">Volume</button>
+                            <button id="modeMIP" class="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all">MIP</button>
+                            <button id="modeISO" class="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all">Isosurface</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                            <i data-lucide="palette" class="w-4 h-4 text-blue-400"></i> Color Map
+                        </h3>
+                        <select id="colorMapSelect" class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs px-3 py-2.5 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="0">Grayscale (Original CT)</option>
+                            <option value="1">Hot Iron (Thermal highlights)</option>
+                            <option value="2">Pulmonary (Cool blue/white)</option>
+                            <option value="3">Anatomical (Bones / Soft tissue)</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                            <span class="flex items-center gap-2"><i data-lucide="sliders" class="w-4 h-4 text-blue-400"></i> Windowing & Thresholds</span>
+                            <button id="resetSlidersBtn" class="text-[10px] text-blue-400 hover:underline">Reset</button>
+                        </h3>
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Min HU Cutoff (Filter air/tissue)</span>
+                                <span id="valMinHU" class="font-mono text-white font-medium">-700 HU</span>
+                            </div>
+                            <input type="range" id="sliderMinHU" min="0" max="255" value="38" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        </div>
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Max HU Cutoff</span>
+                                <span id="valMaxHU" class="font-mono text-white font-medium">+1000 HU</span>
+                            </div>
+                            <input type="range" id="sliderMaxHU" min="0" max="255" value="255" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        </div>
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Volume Density/Opacity</span>
+                                <span id="valOpacity" class="font-mono text-white font-medium">1.5x</span>
+                            </div>
+                            <input type="range" id="sliderOpacity" min="1" max="50" value="15" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        </div>
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Contrast (Gamma)</span>
+                                <span id="valGamma" class="font-mono text-white font-medium">1.0</span>
+                            </div>
+                            <input type="range" id="sliderGamma" min="5" max="30" value="10" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="space-y-4 border-t border-slate-800/80 pt-5">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                            <span class="flex items-center gap-2"><i data-lucide="scissors" class="w-4 h-4 text-blue-400"></i> Clipping & Sectioning</span>
+                        </h3>
+                        <div class="grid grid-cols-4 gap-1.5">
+                            <button id="clipNone" class="px-2 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 border border-blue-500 text-white transition-all shadow-md">Off</button>
+                            <button id="clipX" class="px-2 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all">Sagittal</button>
+                            <button id="clipY" class="px-2 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all">Coronal</button>
+                            <button id="clipZ" class="px-2 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all">Axial</button>
+                        </div>
+                        <div id="clippingSettingsGroup" class="hidden space-y-4">
+                            <div class="space-y-1.5">
+                                <div class="flex justify-between text-xs">
+                                    <span class="text-slate-400">Plane Position</span>
+                                    <span id="valClipPos" class="font-mono text-white font-medium">0%</span>
+                                </div>
+                                <input type="range" id="sliderClipPos" min="-50" max="50" value="0" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="clipDirectionToggle" class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500/30">
+                                    <span class="text-xs text-slate-300">Invert Clipping</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer">
+                                    <input type="checkbox" id="showClipPlaneHelper" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500/30">
+                                    <span class="text-xs text-slate-300">Show Plane Guide</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3 border-t border-slate-800/80 pt-5">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                            <i data-lucide="layout-grid" class="w-4 h-4 text-blue-400"></i> 2D Slice Inspector
+                        </h3>
+                        <div class="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex flex-col items-center justify-center p-3">
+                            <canvas id="sliceCanvas" class="w-full max-w-[256px] aspect-square object-contain bg-black border border-slate-900 rounded"></canvas>
+                            <div class="mt-2 text-center">
+                                <p id="sliceInfoText" class="text-xs font-mono text-slate-400">Select clipping plane to view slice</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/50 rounded-xl p-4 border border-slate-800/50 space-y-2.5">
+                        <h4 class="text-xs font-bold tracking-wide uppercase text-slate-500 flex items-center gap-1.5">
+                            <i data-lucide="info" class="w-3.5 h-3.5"></i> Voxel Metadata
+                        </h4>
+                        <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+                            <div><p class="text-slate-500">Dimensions:</p><p id="metaDims" class="text-slate-300">--</p></div>
+                            <div><p class="text-slate-500">Slices:</p><p id="metaSlices" class="text-slate-300">--</p></div>
+                            <div><p class="text-slate-500">Pixel Size:</p><p id="metaPixelSpacing" class="text-slate-300">--</p></div>
+                            <div><p class="text-slate-500">Slice Space:</p><p id="metaSliceSpacing" class="text-slate-300">--</p></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.145.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let metadata = null;
+        let volumeData = null;
+        let scene = null, camera = null, renderer = null, controls = null;
+        let volumeGroup = null, boxHelper = null, clipHelperPlane = null;
+        let sliceMeshes = []; // Array of plane meshes for CPU-friendly volume rendering
+        let animationFrameId = null;
+        let pollingInterval = null;
+
+        const sliderMinHU = document.getElementById('sliderMinHU');
+        const sliderMaxHU = document.getElementById('sliderMaxHU');
+        const sliderOpacity = document.getElementById('sliderOpacity');
+        const sliderGamma = document.getElementById('sliderGamma');
+        const valMinHU = document.getElementById('valMinHU');
+        const valMaxHU = document.getElementById('valMaxHU');
+        const valOpacity = document.getElementById('valOpacity');
+        const valGamma = document.getElementById('valGamma');
+        const lockRotationCheckbox = document.getElementById('lockRotation');
+        const showWireframeCheckbox = document.getElementById('showWireframe');
+        const resetCameraBtn = document.getElementById('resetCameraBtn');
+        const resetSlidersBtn = document.getElementById('resetSlidersBtn');
+        const colorMapSelect = document.getElementById('colorMapSelect');
+
+        let clipAxis = 0;
+        let clipValue = 0.0;
+        let clipDirection = 1;
+        const clippingSettingsGroup = document.getElementById('clippingSettingsGroup');
+        const sliderClipPos = document.getElementById('sliderClipPos');
+        const valClipPos = document.getElementById('valClipPos');
+        const clipDirectionToggle = document.getElementById('clipDirectionToggle');
+        const showClipPlaneHelper = document.getElementById('showClipPlaneHelper');
+
+        const sliceCanvas = document.getElementById('sliceCanvas');
+        const sliceCtx = sliceCanvas.getContext('2d');
+        const sliceInfoText = document.getElementById('sliceInfoText');
+
+        // Slice textures cache
+        let sliceTextures = [];
+        let sliceMaterials = [];
+
+        function densityToHU(val) {
+            const normalized = val / 255.0;
+            const hu = -1000.0 + normalized * 2000.0;
+            return Math.round(hu);
+        }
+
+        function getColorMapRGB(val, colorMap) {
+            if (val < 0 || val > 255) return [0, 0, 0];
+            const normVal = val / 255.0;
+            if (colorMap == 0) {
+                const g = Math.floor(normVal * 255);
+                return [g, g, g];
+            } else if (colorMap == 1) {
+                return [
+                    Math.floor(Math.min(1, normVal * 2.5) * 255),
+                    Math.floor(Math.min(1, Math.max(0, normVal - 0.4) * 2) * 255),
+                    Math.floor(Math.min(1, Math.max(0, normVal - 0.7) * 3) * 255)
+                ];
+            } else if (colorMap == 2) {
+                return [
+                    Math.floor(Math.max(0, normVal - 0.4) * 255),
+                    Math.floor(Math.min(1, normVal * 1.5) * 255),
+                    Math.floor(Math.min(1, normVal * 0.8 + 0.2) * 255)
+                ];
+            } else {
+                if (val > 180) return [255, 255, 255];
+                else if (val > 64) {
+                    let t = (val - 64) / (180 - 64);
+                    return [
+                        Math.floor((0.6 + t * 0.35) * 255),
+                        Math.floor((0.1 + t * 0.5) * 255),
+                        Math.floor((0.05 + t * 0.1) * 255)
+                    ];
+                } else {
+                    let t = val / 64;
+                    return [
+                        Math.floor(t * 0.2 * 255),
+                        Math.floor((0.05 + t * 0.4) * 255),
+                        Math.floor((0.15 + t * 0.5) * 255)
+                    ];
+                }
+            }
+        }
+
+        function initApp() {
+            lucide.createIcons();
+            document.getElementById('useDefaultBtn').addEventListener('click', () => {
+                document.getElementById('dirInput').value = "f:\\3D\\P001";
+            });
+            document.getElementById('startProcessBtn').addEventListener('click', startReconstruction);
+            document.getElementById('loadAnotherBtn').addEventListener('click', loadAnotherScan);
+            setupVisualizerEventListeners();
+        }
+
+        async function startReconstruction() {
+            const directory = document.getElementById('dirInput').value.trim();
+            if (!directory) { showError("Please enter a valid directory path."); return; }
+
+            document.getElementById('setupErrorBox').classList.add('hidden');
+            document.getElementById('inputForm').classList.add('pointer-events-none');
+            document.getElementById('startProcessBtn').disabled = true;
+            document.getElementById('startProcessBtn').innerHTML = `<div class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full loader mr-2"></div> Reconstructing...`;
+            document.getElementById('progressPanel').classList.remove('hidden');
+
+            const logConsole = document.getElementById('logConsole');
+            logConsole.textContent = `[INFO] Connecting to python backend on 127.0.0.1...\n`;
+
+            try {
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ directory: directory })
+                });
+                const data = await response.json();
+                if (!response.ok || data.error) throw new Error(data.error || "Failed to start processing.");
+
+                let lastLogIndex = 0;
+                if (pollingInterval) clearInterval(pollingInterval);
+                pollingInterval = setInterval(async () => {
+                    try {
+                        const statusResp = await fetch('/api/status');
+                        if (!statusResp.ok) return;
+                        const statusData = await statusResp.json();
+                        const progress = statusData.progress || 0;
+                        document.getElementById('setupProgressBar').style.width = `${progress}%`;
+                        document.getElementById('setupProgressPercent').innerText = `${progress}%`;
+                        document.getElementById('setupProgressStep').innerText = statusData.current_step || "Processing...";
+                        const logs = statusData.logs || [];
+                        if (logs.length > lastLogIndex) {
+                            for (let i = lastLogIndex; i < logs.length; i++) logConsole.textContent += logs[i] + "\n";
+                            lastLogIndex = logs.length;
+                            logConsole.scrollTop = logConsole.scrollHeight;
+                        }
+                        if (statusData.status === 'completed') {
+                            clearInterval(pollingInterval);
+                            pollingInterval = null;
+                            logConsole.textContent += "\n[SUCCESS] 3D Volume compiled! Downloading reconstruction package...\n";
+                            await loadVisualizerData(directory);
+                        } else if (statusData.status === 'error') {
+                            clearInterval(pollingInterval);
+                            pollingInterval = null;
+                            showError(statusData.error || "Unknown error.");
+                            resetFormUI();
+                        }
+                    } catch (e) { console.error(e); }
+                }, 300);
+            } catch (err) {
+                showError(err.message);
+                resetFormUI();
+            }
+        }
+
+        function resetFormUI() {
+            document.getElementById('inputForm').classList.remove('pointer-events-none');
+            document.getElementById('startProcessBtn').disabled = false;
+            document.getElementById('startProcessBtn').innerHTML = `<i data-lucide="play" class="w-4 h-4"></i> Reconstruct 3D Volume`;
+            lucide.createIcons();
+        }
+
+        function showError(msg) {
+            document.getElementById('setupErrorText').innerText = msg;
+            document.getElementById('setupErrorBox').classList.remove('hidden');
+        }
+
+        async function loadVisualizerData(directory) {
+            try {
+                const timestamp = Date.now();
+                const metaResp = await fetch(`metadata.json?t=${timestamp}`);
+                if (!metaResp.ok) throw new Error("Could not load metadata.json");
+                metadata = await metaResp.json();
+
+                document.getElementById('metaDims').innerText = `${metadata.width} x ${metadata.height}`;
+                document.getElementById('metaSlices').innerText = metadata.depth;
+                document.getElementById('metaPixelSpacing').innerText = `${metadata.spacingX.toFixed(2)} x ${metadata.spacingY.toFixed(2)} mm`;
+                document.getElementById('metaSliceSpacing').innerText = `${metadata.spacingZ.toFixed(2)} mm`;
+
+                let parts = directory.replace(/\\/g, '/').split('/');
+                let folderName = parts[parts.length-1] || parts[parts.length-2] || "Patient Scan";
+                document.getElementById('patientName').innerText = folderName;
+                document.getElementById('scanStatus').innerText = `${metadata.depth} Slices`;
+
+                const response = await fetch(`volume.bin?t=${timestamp}`);
+                if (!response.ok) throw new Error("Could not load volume.bin");
+                const arrayBuffer = await response.arrayBuffer();
+                volumeData = new Uint8Array(arrayBuffer);
+
+                resetThreeJS();
+                setupThreeJS();
+                createVolumeMesh();
+                update2DSlice();
+
+                document.getElementById('setupScreen').classList.add('hidden');
+                document.getElementById('visualizerApp').classList.remove('hidden');
+                onWindowResize();
+            } catch (err) {
+                console.error(err);
+                showError("Download Failed: " + err.message);
+                resetFormUI();
+            }
+        }
+
+        function resetThreeJS() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (volumeGroup) {
+                scene.remove(volumeGroup);
+                sliceMeshes.forEach(m => {
+                    if (m.geometry) m.geometry.dispose();
+                    if (m.material) m.material.dispose();
+                });
+                sliceMeshes = [];
+                sliceTextures.forEach(t => t.dispose());
+                sliceTextures = [];
+                sliceMaterials = [];
+                volumeGroup = null;
+            }
+            if (boxHelper) { scene.remove(boxHelper); boxHelper.geometry?.dispose(); boxHelper = null; }
+            if (clipHelperPlane) { scene.remove(clipHelperPlane); clipHelperPlane.geometry?.dispose(); clipHelperPlane = null; }
+            if (renderer) { const container = document.getElementById('canvas-container'); if (container) container.innerHTML = ''; renderer.dispose(); renderer = null; }
+            if (controls) { controls.dispose(); controls = null; }
+            scene = null; camera = null;
+        }
+
+        async function loadAnotherScan() {
+            resetThreeJS();
+            try { await fetch('/api/reset'); } catch(e) {}
+            document.getElementById('visualizerApp').classList.add('hidden');
+            document.getElementById('setupScreen').classList.remove('hidden');
+            resetFormUI();
+            document.getElementById('progressPanel').classList.add('hidden');
+            document.getElementById('setupErrorBox').classList.add('hidden');
+        }
+
+        function setupThreeJS() {
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020617);
+            camera = new THREE.PerspectiveCamera(45, width/height, 0.1, 100);
+            camera.position.set(0, 0, 15);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.localClippingEnabled = true;
+            container.appendChild(renderer.domElement);
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 3;
+            controls.maxDistance = 30;
+            updateRotationLock();
+        }
+
+        function createVolumeMesh() {
+            const w = metadata.width;
+            const h = metadata.height;
+            const d = metadata.depth;
+
+            const physicalWidth = w * metadata.spacingX;
+            const physicalHeight = h * metadata.spacingY;
+            const physicalDepth = d * metadata.spacingZ;
+            const maxDim = Math.max(physicalWidth, physicalHeight, physicalDepth);
+            const sizeScale = 6.0 / maxDim;
+            const sizeX = physicalWidth * sizeScale;
+            const sizeY = physicalHeight * sizeScale;
+            const sizeZ = physicalDepth * sizeScale;
+
+            volumeGroup = new THREE.Group();
+
+            // Create a canvas for each slice texture
+            const sliceCanvasEl = document.createElement('canvas');
+            sliceCanvasEl.width = w;
+            sliceCanvasEl.height = h;
+            const ctx = sliceCanvasEl.getContext('2d');
+
+            const minThresh = parseFloat(sliderMinHU.value);
+            const maxThresh = parseFloat(sliderMaxHU.value);
+            const colorMap = parseInt(colorMapSelect.value);
+            const opacityScale = parseFloat(sliderOpacity.value) / 8.0;
+
+            // Build slice textures and meshes
+            for (let z = 0; z < d; z++) {
+                const imgData = ctx.createImageData(w, h);
+                const sliceOffset = z * w * h;
+
+                for (let i = 0; i < w * h; i++) {
+                    const den = volumeData[sliceOffset + i];
+                    const off = i * 4;
+
+                    if (den < minThresh || den > maxThresh) {
+                        imgData.data[off] = 0;
+                        imgData.data[off + 1] = 0;
+                        imgData.data[off + 2] = 0;
+                        imgData.data[off + 3] = 0;
+                    } else {
+                        const rgb = getColorMapRGB(den, colorMap);
+                        imgData.data[off] = rgb[0];
+                        imgData.data[off + 1] = rgb[1];
+                        imgData.data[off + 2] = rgb[2];
+                        imgData.data[off + 3] = Math.min(255, Math.floor(255 * opacityScale));
+                    }
+                }
+
+                ctx.putImageData(imgData, 0, 0);
+
+                const texture = new THREE.CanvasTexture(sliceCanvasEl);
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                sliceTextures.push(texture);
+
+                const material = new THREE.MeshBasicMaterial({
+                    map: texture,
+                    transparent: true,
+                    side: THREE.DoubleSide,
+                    depthWrite: false,
+                    opacity: 1.0
+                });
+                sliceMaterials.push(material);
+
+                const geometry = new THREE.PlaneGeometry(sizeX, sizeY);
+                const mesh = new THREE.Mesh(geometry, material);
+
+                // Position slices along Z axis
+                const zPos = (z / (d - 1) - 0.5) * sizeZ;
+                mesh.position.z = zPos;
+                sliceMeshes.push(mesh);
+                volumeGroup.add(mesh);
+            }
+
+            scene.add(volumeGroup);
+
+            // Create bounding box
+            const boxGeo = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+            const boxMat = new THREE.MeshBasicMaterial({
+                color: 0x4f46e5,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.3
+            });
+            const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+            scene.add(boxMesh);
+            boxHelper = boxMesh;
+
+            // Clip helper plane
+            const clipPlaneGeom = new THREE.PlaneGeometry(1, 1);
+            const clipPlaneMat = new THREE.MeshBasicMaterial({
+                color: 0xf43f5e,
+                transparent: true,
+                opacity: 0.15,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+            clipHelperPlane = new THREE.Mesh(clipPlaneGeom, clipPlaneMat);
+            clipHelperPlane.visible = false;
+            scene.add(clipHelperPlane);
+
+            animate();
+        }
+
+        function updateVolumeTextures() {
+            if (!volumeData || !metadata) return;
+
+            const w = metadata.width;
+            const h = metadata.height;
+            const d = metadata.depth;
+
+            const minThresh = parseFloat(sliderMinHU.value);
+            const maxThresh = parseFloat(sliderMaxHU.value);
+            const colorMap = parseInt(colorMapSelect.value);
+            const opacityScale = parseFloat(sliderOpacity.value) / 8.0;
+
+            const sliceCanvasEl = document.createElement('canvas');
+            sliceCanvasEl.width = w;
+            sliceCanvasEl.height = h;
+            const ctx = sliceCanvasEl.getContext('2d');
+
+            for (let z = 0; z < d; z++) {
+                const imgData = ctx.createImageData(w, h);
+                const sliceOffset = z * w * h;
+
+                for (let i = 0; i < w * h; i++) {
+                    const den = volumeData[sliceOffset + i];
+                    const off = i * 4;
+
+                    if (den < minThresh || den > maxThresh) {
+                        imgData.data[off] = 0;
+                        imgData.data[off + 1] = 0;
+                        imgData.data[off + 2] = 0;
+                        imgData.data[off + 3] = 0;
+                    } else {
+                        const rgb = getColorMapRGB(den, colorMap);
+                        imgData.data[off] = rgb[0];
+                        imgData.data[off + 1] = rgb[1];
+                        imgData.data[off + 2] = rgb[2];
+                        imgData.data[off + 3] = Math.min(255, Math.floor(255 * opacityScale));
+                    }
+                }
+
+                ctx.putImageData(imgData, 0, 0);
+                sliceTextures[z].image = sliceCanvasEl;
+                sliceTextures[z].needsUpdate = true;
+            }
+
+            updateClipping();
+        }
+
+        function updateClipping() {
+            if (!volumeGroup || clipAxis === 0) {
+                if (clipHelperPlane) clipHelperPlane.visible = false;
+                sliceMeshes.forEach(m => { m.visible = true; });
+                return;
+            }
+
+            const d = metadata.depth;
+            const sizeZ = volumeGroup.children[0].position.z * 2 * (d / (d - 1));
+            const physicalWidth = metadata.width * metadata.spacingX * (6.0 / Math.max(
+                metadata.width * metadata.spacingX,
+                metadata.height * metadata.spacingY,
+                metadata.depth * metadata.spacingZ
+            ));
+            const physicalHeight = metadata.height * metadata.spacingY * (6.0 / Math.max(
+                metadata.width * metadata.spacingX,
+                metadata.height * metadata.spacingY,
+                metadata.depth * metadata.spacingZ
+            ));
+            const physicalDepth = metadata.depth * metadata.spacingZ * (6.0 / Math.max(
+                metadata.width * metadata.spacingX,
+                metadata.height * metadata.spacingY,
+                metadata.depth * metadata.spacingZ
+            ));
+
+            const clipVal = clipValue;
+
+            if (clipAxis === 1) { // Sagittal - X axis
+                const clipPos = clipVal * physicalWidth;
+                sliceMeshes.forEach(m => {
+                    m.visible = (clipDirection === 1) ? (m.position.x <= clipPos) : (m.position.x >= clipPos);
+                });
+                if (clipHelperPlane) {
+                    clipHelperPlane.visible = showClipPlaneHelper.checked;
+                    clipHelperPlane.geometry = new THREE.PlaneGeometry(physicalHeight, physicalDepth);
+                    clipHelperPlane.rotation.set(0, Math.PI / 2, 0);
+                    clipHelperPlane.position.set(clipPos, 0, 0);
+                }
+            } else if (clipAxis === 2) { // Coronal - Y axis
+                const clipPos = clipVal * physicalHeight;
+                sliceMeshes.forEach(m => {
+                    m.visible = (clipDirection === 1) ? (m.position.y <= clipPos) : (m.position.y >= clipPos);
+                });
+                if (clipHelperPlane) {
+                    clipHelperPlane.visible = showClipPlaneHelper.checked;
+                    clipHelperPlane.geometry = new THREE.PlaneGeometry(physicalWidth, physicalDepth);
+                    clipHelperPlane.rotation.set(Math.PI / 2, 0, 0);
+                    clipHelperPlane.position.set(0, clipPos, 0);
+                }
+            } else if (clipAxis === 3) { // Axial - Z axis
+                const clipPos = clipVal * physicalDepth;
+                sliceMeshes.forEach(m => {
+                    m.visible = (clipDirection === 1) ? (m.position.z <= clipPos) : (m.position.z >= clipPos);
+                });
+                if (clipHelperPlane) {
+                    clipHelperPlane.visible = showClipPlaneHelper.checked;
+                    clipHelperPlane.geometry = new THREE.PlaneGeometry(physicalWidth, physicalHeight);
+                    clipHelperPlane.rotation.set(0, 0, 0);
+                    clipHelperPlane.position.set(0, 0, clipPos);
+                }
+            }
+        }
+
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+            if (controls) controls.update();
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+
+        function setupVisualizerEventListeners() {
+            window.addEventListener('resize', onWindowResize);
+            sliderMinHU.addEventListener('input', () => {
+                const val = parseFloat(sliderMinHU.value);
+                valMinHU.innerText = `${densityToHU(val)} HU`;
+                updateVolumeTextures();
+                update2DSlice();
+            });
+            sliderMaxHU.addEventListener('input', () => {
+                const val = parseFloat(sliderMaxHU.value);
+                valMaxHU.innerText = `${densityToHU(val)} HU`;
+                updateVolumeTextures();
+                update2DSlice();
+            });
+            sliderOpacity.addEventListener('input', () => {
+                const val = parseFloat(sliderOpacity.value);
+                valOpacity.innerText = `${(val / 8.0).toFixed(1)}x`;
+                updateVolumeTextures();
+            });
+            sliderGamma.addEventListener('input', () => {
+                const val = parseFloat(sliderGamma.value);
+                valGamma.innerText = (val / 10.0).toFixed(1);
+                // Gamma is applied during texture generation - re-render
+                updateVolumeTextures();
+            });
+            lockRotationCheckbox.addEventListener('change', updateRotationLock);
+            showWireframeCheckbox.addEventListener('change', () => { if (boxHelper) boxHelper.visible = showWireframeCheckbox.checked; });
+            resetCameraBtn.addEventListener('click', () => {
+                if (camera && controls) { camera.position.set(0, 0, 15); controls.target.set(0, 0, 0); controls.update(); }
+            });
+            resetSlidersBtn.addEventListener('click', () => {
+                sliderMinHU.value = 38; valMinHU.innerText = "-700 HU";
+                sliderMaxHU.value = 255; valMaxHU.innerText = "+1000 HU";
+                sliderOpacity.value = 15; valOpacity.innerText = "1.9x";
+                sliderGamma.value = 10; valGamma.innerText = "1.0";
+                updateVolumeTextures();
+                update2DSlice();
+            });
+            const modeBtns = {
+                0: document.getElementById('modeVolume'),
+                1: document.getElementById('modeMIP'),
+                2: document.getElementById('modeISO')
+            };
+            function selectRenderMode(mode) {
+                Object.keys(modeBtns).forEach(k => {
+                    const btn = modeBtns[k];
+                    if (parseInt(k) === mode) btn.className = "px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 border border-blue-500 text-white transition-all shadow-md";
+                    else btn.className = "px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all";
+                });
+                // For slice-based rendering, modes affect opacity/threshold behavior
+                updateVolumeTextures();
+            }
+            modeBtns[0].addEventListener('click', () => selectRenderMode(0));
+            modeBtns[1].addEventListener('click', () => selectRenderMode(1));
+            modeBtns[2].addEventListener('click', () => selectRenderMode(2));
+            colorMapSelect.addEventListener('change', () => { updateVolumeTextures(); update2DSlice(); });
+
+            const clipBtns = {
+                0: document.getElementById('clipNone'),
+                1: document.getElementById('clipX'),
+                2: document.getElementById('clipY'),
+                3: document.getElementById('clipZ')
+            };
+            function selectClippingAxis(axis) {
+                clipAxis = axis;
+                Object.keys(clipBtns).forEach(k => {
+                    const btn = clipBtns[k];
+                    if (parseInt(k) === axis) btn.className = "px-2 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 border border-blue-500 text-white transition-all shadow-md";
+                    else btn.className = "px-2 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 transition-all";
+                });
+                if (axis === 0) {
+                    clippingSettingsGroup.classList.add('hidden');
+                    if (clipHelperPlane) clipHelperPlane.visible = false;
+                    sliceMeshes.forEach(m => m.visible = true);
+                    sliceInfoText.innerText = "Select clipping plane to view slice";
+                    sliceCtx.fillStyle = '#000000';
+                    sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+                } else {
+                    clippingSettingsGroup.classList.remove('hidden');
+                    updateClipping();
+                    update2DSlice();
+                }
+            }
+            clipBtns[0].addEventListener('click', () => selectClippingAxis(0));
+            clipBtns[1].addEventListener('click', () => selectClippingAxis(1));
+            clipBtns[2].addEventListener('click', () => selectClippingAxis(2));
+            clipBtns[3].addEventListener('click', () => selectClippingAxis(3));
+            sliderClipPos.addEventListener('input', () => {
+                const val = parseFloat(sliderClipPos.value);
+                valClipPos.innerText = `${(val * 2).toFixed(0)}%`;
+                clipValue = val / 100.0;
+                updateClipping();
+                update2DSlice();
+            });
+            clipDirectionToggle.addEventListener('change', () => {
+                clipDirection = clipDirectionToggle.checked ? -1 : 1;
+                updateClipping();
+            });
+            showClipPlaneHelper.addEventListener('change', () => {
+                if (clipAxis !== 0 && clipHelperPlane) clipHelperPlane.visible = showClipPlaneHelper.checked;
+            });
+        }
+
+        function onWindowResize() {
+            if (!containerHasSize() || !renderer || !camera) return;
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function containerHasSize() {
+            const c = document.getElementById('canvas-container');
+            return c && c.clientWidth > 0 && c.clientHeight > 0;
+        }
+
+        function updateRotationLock() {
+            if (!controls) return;
+            if (lockRotationCheckbox.checked) {
+                controls.minPolarAngle = Math.PI / 2;
+                controls.maxPolarAngle = Math.PI / 2;
+            } else {
+                controls.minPolarAngle = 0;
+                controls.maxPolarAngle = Math.PI;
+            }
+            controls.update();
+        }
+
+        function update2DSlice() {
+            if (!volumeData || !metadata || clipAxis === 0) return;
+            const w = metadata.width, h = metadata.height, d = metadata.depth;
+            const minThresh = Math.floor(parseFloat(sliderMinHU.value));
+            const maxThresh = Math.floor(parseFloat(sliderMaxHU.value));
+            const colorMap = parseInt(colorMapSelect.value);
+
+            let sliceIdx = 0, sliceLabel = "", dataWidth = 0, dataHeight = 0;
+            if (clipAxis === 1) {
+                sliceIdx = Math.floor((clipValue + 0.5) * (w - 1));
+                sliceIdx = Math.max(0, Math.min(w - 1, sliceIdx));
+                sliceLabel = `Sagittal Slice: ${sliceIdx + 1} / ${w}`;
+                dataWidth = h; dataHeight = d;
+            } else if (clipAxis === 2) {
+                sliceIdx = Math.floor((clipValue + 0.5) * (h - 1));
+                sliceIdx = Math.max(0, Math.min(h - 1, sliceIdx));
+                sliceLabel = `Coronal Slice: ${sliceIdx + 1} / ${h}`;
+                dataWidth = w; dataHeight = d;
+            } else if (clipAxis === 3) {
+                sliceIdx = Math.floor((clipValue + 0.5) * (d - 1));
+                sliceIdx = Math.max(0, Math.min(d - 1, sliceIdx));
+                sliceLabel = `Axial Slice: ${sliceIdx + 1} / ${d}`;
+                dataWidth = w; dataHeight = h;
+            }
+            sliceInfoText.innerText = sliceLabel;
+            sliceCanvas.width = dataWidth;
+            sliceCanvas.height = dataHeight;
+            const imgData = sliceCtx.createImageData(dataWidth, dataHeight);
+
+            function mapColor(val) {
+                if (val < minThresh || val > maxThresh) return [0, 0, 0];
+                return getColorMapRGB(val, colorMap);
+            }
+
+            if (clipAxis === 1) {
+                for (let z = 0; z < d; z++) {
+                    const sliceOffset = z * w * h;
+                    const canvasRow = d - 1 - z;
+                    for (let y = 0; y < h; y++) {
+                        const den = volumeData[sliceOffset + y * w + sliceIdx];
+                        const rgb = mapColor(den);
+                        const off = (canvasRow * h + y) * 4;
+                        imgData.data[off] = rgb[0]; imgData.data[off + 1] = rgb[1]; imgData.data[off + 2] = rgb[2];
+                        imgData.data[off + 3] = (den < minThresh || den > maxThresh) ? 0 : 255;
+                    }
+                }
+            } else if (clipAxis === 2) {
+                const rowOffset = sliceIdx * w;
+                for (let z = 0; z < d; z++) {
+                    const sliceOffset = z * w * h;
+                    const canvasRow = d - 1 - z;
+                    for (let x = 0; x < w; x++) {
+                        const den = volumeData[sliceOffset + rowOffset + x];
+                        const rgb = mapColor(den);
+                        const off = (canvasRow * w + x) * 4;
+                        imgData.data[off] = rgb[0]; imgData.data[off + 1] = rgb[1]; imgData.data[off + 2] = rgb[2];
+                        imgData.data[off + 3] = (den < minThresh || den > maxThresh) ? 0 : 255;
+                    }
+                }
+            } else if (clipAxis === 3) {
+                const sliceOffset = sliceIdx * w * h;
+                for (let i = 0; i < w * h; i++) {
+                    const den = volumeData[sliceOffset + i];
+                    const rgb = mapColor(den);
+                    const off = i * 4;
+                    imgData.data[off] = rgb[0]; imgData.data[off + 1] = rgb[1]; imgData.data[off + 2] = rgb[2];
+                    imgData.data[off + 3] = (den < minThresh || den > maxThresh) ? 0 : 255;
+                }
+            }
+            sliceCtx.putImageData(imgData, 0, 0);
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
