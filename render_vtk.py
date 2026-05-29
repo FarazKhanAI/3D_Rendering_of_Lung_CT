@@ -1,87 +1,160 @@
-import vtk
-import numpy as np
+import argparse
 import json
+import os
 
-# Load metadata
-with open('metadata.json', 'r') as f:
-    meta = json.load(f)
+import numpy as np
+import vtk
+from vtk.util.numpy_support import numpy_to_vtk
 
-width = meta['width']
-height = meta['height']
-depth = meta['depth']
-spacing = [meta['spacingX'], meta['spacingY'], meta['spacingZ']]
 
-# Load volume data
-with open('volume.bin', 'rb') as f:
-    volume = np.frombuffer(f.read(), dtype=np.uint8)
-volume = volume.reshape((depth, height, width))
+def load_volume(path='volume.bin', metadata_path='metadata.json'):
+    with open(metadata_path, 'r', encoding='utf-8') as f:
+        meta = json.load(f)
 
-# Convert numpy array to VTK image
-vtk_data = vtk.vtkImageData()
-vtk_data.SetDimensions(width, height, depth)
-vtk_data.SetSpacing(spacing)
-vtk_data.AllocateScalars(vtk.VTK_UNSIGNED_CHAR, 1)
+    width = int(meta['width'])
+    height = int(meta['height'])
+    depth = int(meta['depth'])
+    spacing = [float(meta.get('spacingX', 1.0)), float(meta.get('spacingY', 1.0)), float(meta.get('spacingZ', 1.0))]
 
-flat = volume.flatten(order='C')
-vtk_array = vtk.util.numpy_support.numpy_to_vtk(flat, deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
-vtk_data.GetPointData().SetScalars(vtk_array)
+    with open(path, 'rb') as f:
+        raw = np.frombuffer(f.read(), dtype=np.uint8)
 
-# Set up transfer functions (window: -1000 to 1000 HU mapped to 0-255)
-color_func = vtk.vtkColorTransferFunction()
-color_func.AddRGBPoint(0, 0.8, 0.4, 0.4)    # Soft tissue (pinkish)
-color_func.AddRGBPoint(40, 0.9, 0.7, 0.6)   # Muscle
-color_func.AddRGBPoint(80, 0.95, 0.85, 0.7) # Fat
-color_func.AddRGBPoint(120, 1.0, 1.0, 1.0)  # Bone
-color_func.AddRGBPoint(255, 1.0, 1.0, 1.0)  # Max
+    volume = raw.reshape((depth, height, width))
+    volume_xyz = np.transpose(volume, (2, 1, 0)).astype(np.uint8)
 
-opacity_func = vtk.vtkPiecewiseFunction()
-opacity_func.AddPoint(0, 0.00)    # Air
-opacity_func.AddPoint(30, 0.01)   # Soft tissue
-opacity_func.AddPoint(80, 0.15)   # Muscle
-opacity_func.AddPoint(120, 0.5)   # Bone
-opacity_func.AddPoint(255, 0.8)   # Max
+    image = vtk.vtkImageData()
+    image.SetDimensions(width, height, depth)
+    image.SetSpacing(spacing)
+    image.SetOrigin(0.0, 0.0, 0.0)
+    image.AllocateScalars(vtk.VTK_UNSIGNED_CHAR, 1)
+    image.GetPointData().SetScalars(numpy_to_vtk(volume_xyz.ravel(order='C'), deep=True, array_type=vtk.VTK_UNSIGNED_CHAR))
+    return image, (width, height, depth), spacing
 
-# Volume property
-volume_property = vtk.vtkVolumeProperty()
-volume_property.SetColor(color_func)
-volume_property.SetScalarOpacity(opacity_func)
-volume_property.ShadeOn()
-volume_property.SetInterpolationTypeToLinear()
-volume_property.SetAmbient(0.3)
-volume_property.SetDiffuse(0.7)
-volume_property.SetSpecular(0.2)
 
-# Ray cast mapper (CPU)
-mapper = vtk.vtkFixedPointVolumeRayCastMapper()
-mapper.SetInputData(vtk_data)
+def make_volume_actor(image):
+    color = vtk.vtkColorTransferFunction()
+    color.AddRGBPoint(0, 0.00, 0.00, 0.00)    # air / background
+    color.AddRGBPoint(25, 0.20, 0.18, 0.16)   # dark tissue
+    color.AddRGBPoint(80, 0.95, 0.82, 0.72)   # soft tissue
+    color.AddRGBPoint(170, 1.00, 0.98, 0.95)  # bone / dense anatomy
 
-# Volume actor
-volume_actor = vtk.vtkVolume()
-volume_actor.SetMapper(mapper)
-volume_actor.SetProperty(volume_property)
+    opacity = vtk.vtkPiecewiseFunction()
+    opacity.AddPoint(0, 0.00)
+    opacity.AddPoint(18, 0.01)
+    opacity.AddPoint(45, 0.08)
+    opacity.AddPoint(95, 0.25)
+    opacity.AddPoint(160, 0.55)
+    opacity.AddPoint(255, 0.85)
 
-# Renderer
-renderer = vtk.vtkRenderer()
-renderer.AddVolume(volume_actor)
-renderer.SetBackground(0.1, 0.1, 0.1)
+    property_ = vtk.vtkVolumeProperty()
+    property_.SetColor(color)
+    property_.SetScalarOpacity(opacity)
+    property_.SetInterpolationTypeToLinear()
+    property_.ShadeOn()
+    property_.SetAmbient(0.25)
+    property_.SetDiffuse(0.75)
+    property_.SetSpecular(0.25)
+    property_.SetSpecularPower(16)
+    property_.SetIndependentComponents(True)
 
-# Render window
-render_window = vtk.vtkRenderWindow()
-render_window.AddRenderer(renderer)
-render_window.SetSize(800, 800)
+    try:
+        mapper = vtk.vtkGPUVolumeRayCastMapper()
+        mapper.SetInputData(image)
+    except Exception:
+        mapper = vtk.vtkFixedPointVolumeRayCastMapper()
+        mapper.SetInputData(image)
 
-# Interactor
-interactor = vtk.vtkRenderWindowInteractor()
-interactor.SetRenderWindow(render_window)
+    mapper.SetBlendModeToComposite()
+    mapper.SetScalarModeToUsePointData()
 
-# Add SSAO-like effect (approximate with light)
-light = vtk.vtkLight()
-light.SetLightTypeToSceneLight()
-light.SetPosition(0, 0, 1)
-light.SetFocalPoint(0, 0, 0)
-light.SetIntensity(0.8)
-renderer.AddLight(light)
+    actor = vtk.vtkVolume()
+    actor.SetMapper(mapper)
+    actor.SetProperty(property_)
+    return actor
 
-# Start rendering
-render_window.Render()
-interactor.Start()
+
+def make_lung_surface_actor(image, lower=25, upper=160):
+    threshold = vtk.vtkImageThreshold()
+    threshold.SetInputData(image)
+    threshold.ThresholdBetween(lower, upper)
+    threshold.ReplaceInOn()
+    threshold.SetInValue(255)
+    threshold.ReplaceOutOn()
+    threshold.SetOutValue(0)
+    threshold.Update()
+
+    contour = vtk.vtkFlyingEdges3D()
+    contour.SetInputConnection(threshold.GetOutputPort())
+    contour.SetValue(0, 128)
+    contour.ComputeNormalsOn()
+    contour.ComputeScalarsOff()
+    contour.Update()
+
+    normals = vtk.vtkPolyDataNormals()
+    normals.SetInputConnection(contour.GetOutputPort())
+    normals.SetFeatureAngle(45)
+    normals.Update()
+
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputConnection(normals.GetOutputPort())
+    mapper.ScalarVisibilityOff()
+
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor(0.88, 0.82, 0.78)
+    actor.GetProperty().SetOpacity(0.60)
+    actor.GetProperty().SetAmbient(0.25)
+    actor.GetProperty().SetDiffuse(0.75)
+    actor.GetProperty().SetSpecular(0.12)
+    actor.GetProperty().SetSpecularPower(12)
+    actor.GetProperty().SetInterpolationToPhong()
+    return actor
+
+
+def render(headless=False):
+    image, dims, spacing = load_volume()
+    width, height, depth = dims
+
+    renderer = vtk.vtkRenderer()
+    renderer.SetBackground(0.03, 0.04, 0.05)
+
+    surface_actor = make_lung_surface_actor(image)
+    renderer.AddActor(surface_actor)
+
+    render_window = vtk.vtkRenderWindow()
+    render_window.AddRenderer(renderer)
+    render_window.SetSize(1100, 900)
+
+    camera = renderer.GetActiveCamera()
+    camera.SetPosition(width * spacing[0] * 1.8, height * spacing[1] * 1.2, depth * spacing[2] * 1.8)
+    camera.SetFocalPoint(width * spacing[0] * 0.5, height * spacing[1] * 0.5, depth * spacing[2] * 0.5)
+    camera.SetViewUp(0.0, 0.0, 1.0)
+    camera.Zoom(1.15)
+
+    if headless:
+        render_window.OffScreenRenderingOn()
+        render_window.Render()
+        window_to_image = vtk.vtkWindowToImageFilter()
+        window_to_image.SetInput(render_window)
+        window_to_image.Update()
+
+        writer = vtk.vtkPNGWriter()
+        writer.SetInputConnection(window_to_image.GetOutputPort())
+        path = os.path.join(os.getcwd(), 'render_vtk.png')
+        writer.SetFileName(path)
+        writer.Write()
+        print(f'Headless render saved to {path}')
+        return
+
+    interactor = vtk.vtkRenderWindowInteractor()
+    interactor.SetRenderWindow(render_window)
+    interactor.GetInteractorStyle().SetDefaultRenderer(renderer)
+    render_window.Render()
+    interactor.Start()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='VTK 3D CT volume renderer')
+    parser.add_argument('--headless', action='store_true', help='Render once to an image and exit.')
+    args = parser.parse_args()
+    render(headless=args.headless)

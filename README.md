@@ -20,39 +20,32 @@ pip install -r requirements.txt
 
 ---
 
+
 ## 🚀 How to Run
 
-1. **Start the Data Processor & Server**:
-   Execute the `visualize.py` script:
-   ```powershell
-   python visualize.py
-   ```
+1. **Process the DICOM Data**:
+    Execute the `visualize.py` script to generate the 3D volume and metadata:
+    ```powershell
+    python visualize.py
+    ```
+    This will create `volume.bin` and `metadata.json` in your workspace.
 
-2. **What this command does**:
-   - Finds the DICOM scan slices inside the `P001` folder.
-   - Reads slice data and **correctly sorts them** using the `(0020, 1041) Slice Location` tag to ensure anatomical ordering.
-   - Converts raw pixel data into physical **Hounsfield Units (HU)**.
-   - Downsamples slices (to `256x256` for performance) and builds a unified 3D volume, saving it as `volume.bin` (~9.7 MB).
-   - Extracts voxel dimensions (pixel size & slice thickness) and saves them as `metadata.json` to preserve correct physical proportions in 3D.
-   - Starts a lightweight local web server on port `8000`.
-   - **Automatically opens** your default web browser to the viewer dashboard at `http://127.0.0.1:8000`.
+2. **View Realistic 3D Rendering (VTK)**:
+    Run the following command to launch the VTK-based 3D visualizer:
+    ```powershell
+    python render_vtk.py
+    ```
+    This will open an interactive 3D window using VTK CPU Ray Casting with realistic transfer functions and lighting. No web dashboard is used for 3D rendering.
 
 ---
 
-## 🖥️ Interactive Web Dashboard Features
+## 🖥️ 3D Visualization Features (VTK)
 
-Once the page loads, you can use the following controls:
+* Realistic volume rendering using VTK CPU Ray Casting (no GPU required)
+* Anatomical color and opacity transfer functions for soft tissue, muscle, and bone
+* Interactive 3D rotation, zoom, and pan
+* Lighting and shading for enhanced depth perception
 
-*   **Original CT Grayscale Rendering**: Dense structures (like bones and consolidations) are rendered white, while low-density areas (like air inside lungs) are rendered black/transparent, matching clinical PACS workstations.
-*   **Horizontal-only Rotation**: Enabled by default (controlled via the **"Lock Horizontal Rotation"** toggle). This locks vertical movement so you can drag left/right to rotate the patient's body horizontally, making analysis stable and easy to control.
-*   **Anatomical Clipping Planes**:
-    - Choose an axis: **Sagittal** (Left-to-Right), **Coronal** (Front-to-Back), or **Axial** (Head-to-Toe).
-    - Drag the **Plane Position** slider to slice through the 3D volume, exposing internal structures.
-    - Check **Invert Clipping** to slice in the opposite direction.
-    - An overlay plane guide (red outline) displays in 3D to show exactly where you are cutting.
-*   **2D Slice Inspector**: A secondary screen in the control panel displays the corresponding **2D slice** (cross-section) of the current clipping plane in real time, with the same color/threshold settings.
-*   **Windowing & Threshold Sliders**:
-    - **Min HU Cutoff**: Filters out voxels below the selected Hounsfield Unit. Setting this around `-700 HU` removes air and shows lung tissue. Setting this to `+100 HU` or higher isolates the skeletal structure (bones).
-    - **Opacity & Contrast**: Fine-tune the transparency and gamma brightness to enhance specific details or highlight potential infection areas.
-*   **Visual Modes**: Toggle between **Volume Rendering** (standard raymarching), **MIP (Maximum Intensity Projection)**, and **Isosurface** (solid shell at the threshold value).
-*   **Alternative Color Maps**: Easily switch between standard Grayscale, Hot Iron (thermal), Cool Blue, and a multi-color Anatomical view.
+---
+
+> **Note:** The web dashboard and other rendering methods are no longer used for 3D visualization. Only `render_vtk.py` provides the correct, realistic 3D view.
