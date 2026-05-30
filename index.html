@@ -138,6 +138,16 @@
                             <i data-lucide="lock" class="w-3.5 h-3.5"></i> Lock Horizontal Rotation
                         </span>
                     </label>
+                    <!-- NEW: Vertical Rotation Lock -->
+                    <label class="flex items-center space-x-3 cursor-pointer group">
+                        <div class="relative">
+                            <input type="checkbox" id="lockVerticalRotation" class="sr-only peer">
+                            <div class="w-10 h-6 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/40 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </div>
+                        <span class="text-xs font-medium text-slate-300 group-hover:text-white transition-colors flex items-center gap-1.5">
+                            <i data-lucide="lock" class="w-3.5 h-3.5"></i> Lock Vertical Rotation
+                        </span>
+                    </label>
                     <button id="resetCameraBtn" class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-semibold transition-all">
                         <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Reset View
                     </button>
@@ -267,8 +277,8 @@
         let activeClipPlane = null;
         let animationFrameId = null;
         let pollingInterval = null;
-        let isVisualizerLoading = false; // CRITICAL: prevents concurrent loadVisualizerData
-        let isVisualizerLoaded = false;  // CRITICAL: prevents double-loading
+        let isVisualizerLoading = false;
+        let isVisualizerLoaded = false;
         let clipAxis = 0;
         let clipValue = 0.0;
         let clipDirection = 1;
@@ -309,6 +319,7 @@
             valMaxHU: document.getElementById('valMaxHU'),
             resetWindowBtn: document.getElementById('resetWindowBtn'),
             lockRotation: document.getElementById('lockRotation'),
+            lockVerticalRotation: document.getElementById('lockVerticalRotation'), // NEW
             showWireframe: document.getElementById('showWireframe'),
             resetCameraBtn: document.getElementById('resetCameraBtn'),
             sliderClipPos: document.getElementById('sliderClipPos'),
@@ -439,7 +450,7 @@
             controls.dampingFactor = 0.05;
             controls.minDistance = 3;
             controls.maxDistance = 25;
-            updateRotationLock(); // FIXED: was "updateRotation" (incomplete)
+            updateRotationLock();
 
             // Lights
             const ambient = new THREE.AmbientLight(0xffffff, 0.6);
@@ -482,7 +493,7 @@
         }
 
         // ------------------------------------------------------------------
-        // Load Anatomy Models — FIXED VERSION
+        // Load Anatomy Models
         // ------------------------------------------------------------------
         async function loadAnatomyModels() {
             console.log("[Loader] Starting anatomy model load...");
@@ -529,7 +540,6 @@
                 
                 const loader = new THREE.OBJLoader();
                 
-                // FIXED: Add 15-second timeout per mesh so hung loads fail gracefully
                 const loadWithTimeout = (item) => {
                     return new Promise((resolve, reject) => {
                         const timer = setTimeout(() => {
@@ -581,7 +591,6 @@
 
                 const loadPromises = manifest.meshes.map(item => loadWithTimeout(item));
 
-                // Wait for all loads to complete
                 const results = await Promise.allSettled(loadPromises);
                 console.log("[Loader] All loads finished:", results);
 
@@ -711,12 +720,21 @@
 
         function updateRotationLock() {
             if (!controls) return;
+            // Horizontal lock (polar angle)
             if (els.lockRotation.checked) {
                 controls.minPolarAngle = Math.PI / 2;
                 controls.maxPolarAngle = Math.PI / 2;
             } else {
                 controls.minPolarAngle = 0;
                 controls.maxPolarAngle = Math.PI;
+            }
+            // NEW: Vertical lock (azimuth angle)
+            if (els.lockVerticalRotation.checked) {
+                controls.minAzimuthAngle = 0;
+                controls.maxAzimuthAngle = 0;
+            } else {
+                controls.minAzimuthAngle = -Infinity;
+                controls.maxAzimuthAngle = Infinity;
             }
             controls.update();
         }
@@ -744,10 +762,10 @@
                 if (!resp.ok || data.error) throw new Error(data.error || 'Failed to start processing.');
 
                 let lastLogIndex = 0;
-                let isCheckingStatus = false; // FIXED: prevent overlapping status checks
+                let isCheckingStatus = false;
 
                 pollingInterval = setInterval(async () => {
-                    if (isCheckingStatus) return; // Skip if previous check still running
+                    if (isCheckingStatus) return;
                     isCheckingStatus = true;
 
                     try {
@@ -787,7 +805,6 @@
         }
 
         async function loadVisualizerData(directory) {
-            // FIXED: prevent concurrent calls
             if (isVisualizerLoading) {
                 console.log("[loadVisualizerData] Already loading, skipping duplicate call.");
                 return;
@@ -871,6 +888,7 @@
             });
 
             els.lockRotation.addEventListener('change', updateRotationLock);
+            els.lockVerticalRotation.addEventListener('change', updateRotationLock); // NEW
             els.showWireframe.addEventListener('change', () => { if (boxHelper) boxHelper.visible = els.showWireframe.checked; });
             els.resetCameraBtn.addEventListener('click', () => {
                 if (camera && controls) { 
