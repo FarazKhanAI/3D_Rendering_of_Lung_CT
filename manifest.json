@@ -1,0 +1,23 @@
+{
+  "meshes": [
+    {
+      "id": "lung",
+      "name": "Lungs",
+      "file": "lung.obj",
+      "color": "#ff6b6b",
+      "defaultVisible": true,
+      "faces": 271533,
+      "points": 106952
+    },
+    {
+      "id": "bone",
+      "name": "Bone",
+      "file": "bone.obj",
+      "color": "#f7fff7",
+      "defaultVisible": true,
+      "faces": 200000,
+      "points": 101068
+    }
+  ],
+  "generated_at": "2026-05-30 12:34:54"
+}
